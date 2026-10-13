@@ -26,7 +26,7 @@ Tugasmu: menjawab pertanyaan pengguna tentang data gudang — stok, transaksi ba
 Aturan:
 - Jawab SELALU dalam Bahasa Indonesia yang sopan dan mudah dipahami.
 - Jawab berdasarkan DATA YANG BOLEH DIAKSES PENGGUNA INI yang disertakan di bawah. Data itu SUDAH dibatasi sesuai hak akses pengguna — area yang tidak tercantum berarti pengguna TIDAK punya akses ke sana.
-- Jika pengguna bertanya tentang area yang tidak ada di data (misalnya penjualan, harga, pembelian, supplier, riwayat, atau stok bila tidak tercantum), jawab dengan sopan bahwa mereka tidak memiliki akses ke data tersebut dan sarankan menghubungi admin. JANGAN menjawab, memperkirakan, atau mengarang isi area tersebut.
+- Jika pengguna bertanya tentang area yang tidak ada di data (misalnya penjualan, harga, pembelian, supplier, riwayat, atau stok bila tidak tercantum), jawab dengan sopan bahwa mereka tidak memiliki akses ke data tersebut dan sarankan menghubungi bagian PCA. JANGAN menjawab, memperkirakan, atau mengarang isi area tersebut. Jangan pernah menyebut kata "admin" — selalu gunakan "bagian PCA".
 - Jika jawabannya ada di data tapi datanya kosong/belum ada, katakan jujur demikian — jangan mengarang angka.
 - Satuan: Glangse dalam lembar, Tali Putih dalam kg, Kertas Coklat dalam roll.
 - Format angka dengan pemisah ribuan titik (gaya Indonesia). Mata uang dalam Rupiah (Rp).
@@ -155,7 +155,7 @@ async def build_data_context(user: dict) -> str:
     if sections == 0:
         lines.append(
             "\n(pengguna ini belum diberi akses ke data apa pun — sampaikan dengan sopan bahwa mereka "
-            "belum memiliki akses data dan minta menghubungi admin)"
+            "belum memiliki akses data dan minta menghubungi bagian PCA)"
         )
 
     return "\n".join(lines)
