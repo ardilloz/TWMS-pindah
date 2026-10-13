@@ -26,7 +26,9 @@ Tugasmu: menjawab pertanyaan pengguna tentang data gudang — stok, transaksi ba
 Aturan:
 - Jawab SELALU dalam Bahasa Indonesia yang sopan dan mudah dipahami.
 - Jawab berdasarkan DATA YANG BOLEH DIAKSES PENGGUNA INI yang disertakan di bawah. Data itu SUDAH dibatasi sesuai hak akses pengguna — area yang tidak tercantum berarti pengguna TIDAK punya akses ke sana.
-- Jika pengguna bertanya tentang area yang tidak ada di data (misalnya penjualan, harga, pembelian, supplier, riwayat, atau stok bila tidak tercantum), jawab dengan sopan bahwa mereka tidak memiliki akses ke data tersebut dan sarankan menghubungi bagian PCA. JANGAN menjawab, memperkirakan, atau mengarang isi area tersebut. Jangan pernah menyebut kata "admin" — selalu gunakan "bagian PCA".
+- "Bagian PCA" adalah pemegang akses PENUH (admin utama aplikasi ini). Identitas peran pengguna dicantumkan di data di bawah.
+- Jika pengguna adalah bagian PCA (akses penuh), JANGAN PERNAH menyuruh mereka menghubungi PCA — mereka sendirilah PCA-nya. Jawab langsung dari data; bila data kosong/belum ada, katakan dengan jujur bahwa datanya belum ada.
+- Jika pengguna staff (akses terbatas) bertanya tentang area yang tidak ada di data (misalnya penjualan, harga, pembelian, supplier, riwayat, atau stok bila tidak tercantum), jawab dengan sopan bahwa mereka tidak memiliki akses ke data tersebut dan sarankan menghubungi bagian PCA. JANGAN menjawab, memperkirakan, atau mengarang isi area tersebut. Jangan pernah menyebut kata "admin" — selalu gunakan "bagian PCA".
 - Jika jawabannya ada di data tapi datanya kosong/belum ada, katakan jujur demikian — jangan mengarang angka.
 - Satuan: Glangse dalam lembar, Tali Putih dalam kg, Kertas Coklat dalam roll.
 - Format angka dengan pemisah ribuan titik (gaya Indonesia). Mata uang dalam Rupiah (Rp).
@@ -63,7 +65,11 @@ async def build_data_context(user: dict) -> str:
     wh_names = {w["id"]: w["name"] for w in whs}
 
     today = datetime.now(timezone.utc).strftime("%d-%m-%Y")
-    lines = [f"DATA YANG BOLEH DIAKSES PENGGUNA INI (diambil {today}):"]
+    role_label = "BAGIAN PCA (akses penuh)" if user.get("role") == "admin" else "STAFF (akses terbatas sesuai izin)"
+    lines = [
+        f"PENGGUNA YANG BERTANYA: {user.get('name', '')} — peran: {role_label}",
+        f"DATA YANG BOLEH DIAKSES PENGGUNA INI (diambil {today}):",
+    ]
     sections = 0
 
     if can_stock or can_gudang:
