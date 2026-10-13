@@ -25,6 +25,7 @@ import {
   Receipt,
   Scale,
   ShoppingCart,
+  Sparkles,
   Tag,
   Truck,
   Users,
@@ -47,7 +48,7 @@ const PAGE_INITIAL = { opacity: 0, y: 8 };
 const PAGE_ANIMATE = { opacity: 1, y: 0 };
 const PAGE_TRANSITION = { duration: 0.2, ease: "easeOut" } as const;
 
-type NavItem = { to: string; label: string; icon: typeof Users; testId: string; perms: Permission[] | "admin" };
+type NavItem = { to: string; label: string; icon: typeof Users; testId: string; perms: Permission[] | "admin" | "all" };
 
 // Menu groups (dropdowns). More groups (e.g. Finansial & Keuangan Gudang) get added here later.
 const GROUPS: { id: string; label: string; icon: typeof Users; items: NavItem[] }[] = [
@@ -88,11 +89,13 @@ const GROUPS: { id: string; label: string; icon: typeof Users; items: NavItem[] 
 ];
 
 const SINGLES: NavItem[] = [
+  { to: "/asisten", label: "Asisten AI", icon: Sparkles, testId: "nav-asisten", perms: "all" },
   { to: "/master-data", label: "Master Data", icon: Database, testId: "nav-master-data", perms: "admin" },
   { to: "/pengguna", label: "Kelola Pengguna", icon: Users, testId: "nav-pengguna", perms: "admin" },
 ];
 
-const visible = (user: User | undefined, n: NavItem) => (n.perms === "admin" ? isAdmin(user) : canAny(user, n.perms));
+const visible = (user: User | undefined, n: NavItem) =>
+  n.perms === "all" ? true : n.perms === "admin" ? isAdmin(user) : canAny(user, n.perms);
 
 function NavItemLink({ n, tp, onNavigate, nested }: { n: NavItem; tp: string; onNavigate?: () => void; nested?: boolean }) {
   return (

@@ -14,7 +14,7 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 from lib.db import client, ensure_indexes
 from lib.storage import init_storage
-from routers import admin, auth, internal, master, report, transactions, users
+from routers import admin, assistant, auth, internal, master, report, transactions, users
 
 
 @asynccontextmanager
@@ -39,6 +39,7 @@ async def root():
 
 
 api_router.include_router(auth.router)
+api_router.include_router(assistant.router)
 api_router.include_router(users.router)
 api_router.include_router(master.router)
 api_router.include_router(transactions.router)
