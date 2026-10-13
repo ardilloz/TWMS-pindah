@@ -22,6 +22,7 @@ export const PERM_META: { key: Permission; label: string; desc: string; path: st
   { key: "sisa_stock", label: "Internal · Sisa Stock", desc: "Nomor seri yang belum terjual", path: "/internal/sisa-stock" },
   { key: "out", label: "Internal · Out", desc: "Upload nomor jadi terjual (keluar gudang)", path: "/internal/out" },
   { key: "revisi", label: "Internal · Revisi", desc: "Upload revisi grade & harga penjualan", path: "/internal/revisi" },
+  { key: "asisten", label: "Asisten AI", desc: "Tanya jawab data gudang dengan Claude", path: "/asisten" },
 ];
 
 export function isAdmin(user: User | undefined): boolean {

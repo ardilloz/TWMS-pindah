@@ -69,7 +69,7 @@ export default function App() {
           <Route path="/internal/revisi" element={<Guard any={["revisi"]}><Revisi /></Guard>} />
           <Route path="/internal/detail-koli-cc" element={<Guard any={["detail_koli_cc"]}><DetailKoliCC /></Guard>} />
         </Route>
-        <Route path="/asisten" element={<Asisten />} />
+        <Route path="/asisten" element={<Guard any={["asisten"]}><Asisten /></Guard>} />
         <Route path="/pengguna" element={<Pengguna />} />
         <Route path="/master-data" element={<MasterData />} />
         <Route path="*" element={home} />

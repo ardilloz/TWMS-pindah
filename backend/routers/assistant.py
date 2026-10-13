@@ -10,11 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from lib.auth import get_current_user, now_iso
+from lib.auth import get_current_user, now_iso, require_any
 from lib.db import db
 from lib.stock import ITEM_LABELS, compute_stock
 
-router = APIRouter(prefix="/assistant", tags=["assistant"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/assistant", tags=["assistant"], dependencies=[Depends(require_any("asisten"))])
 
 MODEL_PROVIDER, MODEL_NAME = "anthropic", "claude-sonnet-5-5"
 HISTORY_LIMIT = 50

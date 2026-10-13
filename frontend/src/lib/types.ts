@@ -24,7 +24,8 @@ export type Permission =
   | "detail_koli_cc"
   | "sisa_stock"
   | "out"
-  | "revisi";
+  | "revisi"
+  | "asisten";
 
 export interface User {
   id: string;

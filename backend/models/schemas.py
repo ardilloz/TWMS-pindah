@@ -10,7 +10,7 @@ Permission = Literal[
     "stok", "masuk", "transfer", "pribadi", "riwayat", "gudang", "supplier",
     "harga", "bandul", "pembelian", "berat_koli", "kasir", "detail_koli",
     "dashboard", "penjualan", "laporan_penjualan", "busai", "detail_koli_cc", "sisa_stock",
-    "out", "revisi",
+    "out", "revisi", "asisten",
 ]
 DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
 
