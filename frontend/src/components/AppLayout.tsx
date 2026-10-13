@@ -238,7 +238,7 @@ export default function AppLayout() {
         </SheetContent>
       </Sheet>
 
-      <main className="mx-auto max-w-[1400px] px-4 py-6 md:px-8 lg:px-10 lg:py-9">
+      <main className="mx-auto max-w-[1800px] px-4 py-6 md:px-8 lg:px-10 lg:py-9">
         <motion.div
           key={location.pathname}
           initial={PAGE_INITIAL}

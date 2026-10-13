@@ -12,11 +12,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { SimpleSelect } from "@/components/SimpleSelect";
 import { Paginator, Toolbar } from "@/components/internal/Paginator";
 import { SortHead, useSort } from "@/components/internal/SortableTable";
-import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut, ApiError } from "@/lib/api";
 import { errMsg, fmtDate } from "@/lib/format";
 import { useToday } from "@/lib/queries";
 import { downloadXlsx, rupiah, usePaged, whqs } from "@/lib/internal";
 import type { Bandul, Pembelian, PembelianIn, Potongan } from "@/lib/internal";
+import { DuplicateDialog } from "@/components/internal/DuplicateDialog";
 import { useWh } from "./InternalLayout";
 
 const MAX_ROWS = 300;
@@ -41,6 +42,7 @@ function PembelianForm({ wh, editing, onDone }: { wh: string; editing: Pembelian
   const [rows, setRows] = useState<Row[]>(editing && editing.items.length ? editing.items.map((i): Row => ({ _k: crypto.randomUUID(), nomor_seri: i.nomor_seri, harga_ribu: String(i.harga / 1000), keterangan: i.keterangan })) : [emptyRow()]);
   const cellRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [dupMsg, setDupMsg] = useState<string | null>(null);
   const effDate = date || today.data?.today || "";
 
   const buildPayload = (): PembelianIn => ({
@@ -56,7 +58,7 @@ function PembelianForm({ wh, editing, onDone }: { wh: string; editing: Pembelian
       if (pid) await apiPut(`/internal/pembelian/${pid}?${whqs(wh)}`, payload);
       else { const created = await apiPost<Pembelian>(`/internal/pembelian?${whqs(wh)}`, payload); setPid(created.id); }
       qc.invalidateQueries({ queryKey: ["pembelian", wh] });
-    } catch (e) { toast.error(errMsg(e)); }
+    } catch { /* draft autosave: abaikan error sementara saat mengetik (mis. nomor seri belum selesai diketik); validasi final tetap jalan saat Simpan */ }
   };
   const scheduleSave = () => { if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => void autosave(), 700); };
 
@@ -68,7 +70,7 @@ function PembelianForm({ wh, editing, onDone }: { wh: string; editing: Pembelian
   const finalize = useMutation({
     mutationFn: async () => { const payload = buildPayload(); if (payload.items.length === 0) throw new Error("Isi minimal satu nomor seri"); return pid ? apiPut(`/internal/pembelian/${pid}?${whqs(wh)}`, payload) : apiPost(`/internal/pembelian?${whqs(wh)}`, payload); },
     onSuccess: () => { toast.success(editing ? "Pembelian diperbarui" : "Pembelian tersimpan"); qc.invalidateQueries({ queryKey: ["pembelian", wh] }); qc.invalidateQueries({ queryKey: ["kasir", wh] }); qc.invalidateQueries({ queryKey: ["berat-pending", wh] }); onDone(); },
-    onError: (e) => toast.error(e instanceof Error && e.message.includes("satu") ? e.message : errMsg(e)),
+    onError: (e) => { if (e instanceof ApiError && e.status === 409) setDupMsg(errMsg(e)); else toast.error(e instanceof Error && e.message.includes("satu") ? e.message : errMsg(e)); },
   });
 
   const jumlahSeri = rows.filter((r) => r.nomor_seri.trim()).length;
@@ -121,6 +123,7 @@ function PembelianForm({ wh, editing, onDone }: { wh: string; editing: Pembelian
           <Button type="button" size="lg" onClick={() => finalize.mutate()} disabled={finalize.isPending} data-testid="beli-save-button"><Save className="size-4" /> {finalize.isPending ? "Menyimpan..." : "Simpan"}</Button>
         </div>
       </div>
+      <DuplicateDialog message={dupMsg} onClose={() => setDupMsg(null)} />
     </div>
   );
 }

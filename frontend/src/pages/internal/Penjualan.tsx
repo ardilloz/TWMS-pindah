@@ -11,11 +11,12 @@ import { DateField } from "@/components/DateField";
 import { PageHeader } from "@/components/PageHeader";
 import { Paginator, Toolbar } from "@/components/internal/Paginator";
 import { SortHead, useSort } from "@/components/internal/SortableTable";
-import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut, ApiError } from "@/lib/api";
 import { errMsg, fmtDate } from "@/lib/format";
 import { useToday } from "@/lib/queries";
 import { downloadXlsx, MAX_BRUTO, nextSerial, numId, rupiah, usePaged, whqs } from "@/lib/internal";
 import type { HargaJual, Penjualan } from "@/lib/internal";
+import { DuplicateDialog } from "@/components/internal/DuplicateDialog";
 import { useWh } from "./InternalLayout";
 
 const MAX_ROWS = 50;
@@ -35,12 +36,14 @@ function PenjualanForm({ wh, editing, onDone }: { wh: string; editing: Penjualan
       : [emptyRow()],
   );
   const cellRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [dupMsg, setDupMsg] = useState<string | null>(null);
   const effDate = date || today.data?.today || "";
   const priceOf = (g: string): number | null => (grades.data ?? []).find((x) => x.grade.toUpperCase() === g.trim().toUpperCase())?.harga ?? null;
 
   const focusCell = (idx: number, field: string) => setTimeout(() => cellRefs.current[`${idx}:${field}`]?.focus(), 30);
   const updateRow = (idx: number, patch: Partial<Row>) => setRows((cur) => cur.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
+  // Enter di Nomor Seri: validasi & isi otomatis (bruto, nomor jadi, keterangan), lalu LANJUT KE NOMOR SERI DI BARIS BAWAHNYA.
   const onSeriEnter = async (idx: number) => {
     const row = rows[idx];
     const s = row.nomor_seri.trim().toUpperCase();
@@ -51,18 +54,16 @@ function PenjualanForm({ wh, editing, onDone }: { wh: string; editing: Penjualan
       const prevJadi = idx > 0 ? rows[idx - 1].nomor_jadi : "";
       const autoJadi = row.nomor_jadi || (prevJadi ? nextSerial(prevJadi) : "");
       updateRow(idx, { bruto: String(r.bruto ?? ""), keterangan: r.keterangan ?? "", nomor_jadi: autoJadi });
-      focusCell(idx, "grade");
+      if (idx === rows.length - 1 && rows.length < MAX_ROWS) {
+        setRows((cur) => [...cur, emptyRow(row.grade)]);
+      }
+      focusCell(idx + 1, "seri");
     } catch (e) { toast.error(errMsg(e)); }
   };
 
+  // Enter di Grade: LANJUT KE GRADE DI BARIS BAWAHNYA (tidak kembali ke nomor seri).
   const onGradeEnter = (idx: number) => {
-    const row = rows[idx];
-    if (idx === rows.length - 1 && row.nomor_seri.trim() && rows.length < MAX_ROWS) {
-      setRows((cur) => [...cur, emptyRow(row.grade)]);
-      focusCell(idx + 1, "seri");
-    } else {
-      focusCell(idx + 1, "seri");
-    }
+    if (idx < rows.length - 1) focusCell(idx + 1, "grade");
   };
 
   const removeRow = (idx: number) => setRows((cur) => (cur.length === 1 ? [emptyRow()] : cur.filter((_, i) => i !== idx)));
@@ -75,7 +76,7 @@ function PenjualanForm({ wh, editing, onDone }: { wh: string; editing: Penjualan
       return editing ? apiPut<Penjualan>(`/internal/penjualan/${editing.id}?${whqs(wh)}`, body) : apiPost<Penjualan>(`/internal/penjualan?${whqs(wh)}`, body);
     },
     onSuccess: () => { toast.success(editing ? "Penjualan diperbarui" : "Penjualan tersimpan"); qc.invalidateQueries({ queryKey: ["penjualan", wh] }); qc.invalidateQueries({ queryKey: ["laporan-penjualan", wh] }); onDone(); },
-    onError: (e) => toast.error(e instanceof Error && e.message.includes("satu") ? e.message : errMsg(e)),
+    onError: (e) => { if (e instanceof ApiError && e.status === 409) setDupMsg(errMsg(e)); else toast.error(e instanceof Error && e.message.includes("satu") ? e.message : errMsg(e)); },
   });
 
   const jumlah = rows.filter((r) => r.nomor_seri.trim()).length;
@@ -117,6 +118,7 @@ function PenjualanForm({ wh, editing, onDone }: { wh: string; editing: Penjualan
         <div className="border-t p-3"><Button type="button" variant="outline" size="sm" onClick={() => setRows((c) => (c.length < MAX_ROWS ? [...c, emptyRow(c[c.length - 1]?.grade ?? "")] : c))} data-testid="jual-add-row"><Plus className="size-4" /> Tambah Baris</Button></div>
       </div>
       <div className="flex justify-end gap-3"><Button type="button" variant="outline" onClick={onDone} data-testid="jual-cancel-button"><ArrowLeft className="size-4" /> Kembali</Button><Button type="button" size="lg" onClick={() => save.mutate()} disabled={save.isPending} data-testid="jual-save-button"><Save className="size-4" /> {save.isPending ? "Menyimpan..." : "Simpan"}</Button></div>
+      <DuplicateDialog message={dupMsg} onClose={() => setDupMsg(null)} />
     </div>
   );
 }

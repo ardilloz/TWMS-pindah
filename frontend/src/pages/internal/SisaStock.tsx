@@ -40,15 +40,13 @@ export default function SisaStock() {
   const paged = usePaged(sort.sorted, 100);
 
   const totals = useMemo(() => {
-    let bruto = 0, netto = 0, nettoBeli = 0, pembelian = 0;
+    let bruto = 0, netto = 0, pembelian = 0;
     for (const r of data) {
       bruto += r.bruto_busai ?? r.bruto_beli ?? 0;
       netto += r.netto_busai ?? r.netto_beli ?? 0;
-      const nb = r.netto_beli ?? 0;
-      nettoBeli += nb;
-      pembelian += (r.harga_beli || 0) * nb;
+      pembelian += (r.harga_beli || 0) * (r.netto_beli ?? 0);
     }
-    return { jumlah: data.length, bruto, netto, pembelian, avg: nettoBeli > 0 ? pembelian / nettoBeli : 0 };
+    return { jumlah: data.length, bruto, netto, pembelian, avg: netto > 0 ? pembelian / netto : 0 };
   }, [data]);
 
   const kode = useMemo(() => {
