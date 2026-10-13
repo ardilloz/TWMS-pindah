@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from lib.auth import get_current_user, now_iso, require_any
+from lib.auth import allowed_warehouses, get_current_user, has_perm, now_iso, require_any
 from lib.db import db
 from lib.stock import ITEM_LABELS, compute_stock
 
@@ -25,7 +25,9 @@ Tugasmu: menjawab pertanyaan pengguna tentang data gudang — stok, transaksi ba
 
 Aturan:
 - Jawab SELALU dalam Bahasa Indonesia yang sopan dan mudah dipahami.
-- Jawab berdasarkan DATA GUDANG SAAT INI yang disertakan di bawah. Jika jawabannya tidak ada di data, katakan jujur bahwa data tersebut tidak tersedia — jangan mengarang angka.
+- Jawab berdasarkan DATA YANG BOLEH DIAKSES PENGGUNA INI yang disertakan di bawah. Data itu SUDAH dibatasi sesuai hak akses pengguna — area yang tidak tercantum berarti pengguna TIDAK punya akses ke sana.
+- Jika pengguna bertanya tentang area yang tidak ada di data (misalnya penjualan, harga, pembelian, supplier, riwayat, atau stok bila tidak tercantum), jawab dengan sopan bahwa mereka tidak memiliki akses ke data tersebut dan sarankan menghubungi admin. JANGAN menjawab, memperkirakan, atau mengarang isi area tersebut.
+- Jika jawabannya ada di data tapi datanya kosong/belum ada, katakan jujur demikian — jangan mengarang angka.
 - Satuan: Glangse dalam lembar, Tali Putih dalam kg, Kertas Coklat dalam roll.
 - Format angka dengan pemisah ribuan titik (gaya Indonesia). Mata uang dalam Rupiah (Rp).
 - Jawaban ringkas dan langsung. Gunakan daftar poin bila membantu. Markdown sederhana (bold, list) boleh dipakai.
@@ -43,83 +45,117 @@ def _num(v: float) -> str:
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-async def build_data_context() -> str:
-    stock = await compute_stock()
+async def build_data_context(user: dict) -> str:
+    """Konteks data dibatasi permission & gudang yang boleh diakses pengguna ini."""
+    allowed = allowed_warehouses(user)
+    wh_filter = {} if allowed is None else {"warehouse_id": {"$in": list(allowed)}}
+
+    can_stock = any(has_perm(user, p) for p in ("stok", "masuk", "transfer", "pribadi"))
+    can_gudang = has_perm(user, "gudang")
+    can_supplier = has_perm(user, "supplier")
+    tx_types = {t for t in ("masuk", "transfer", "pribadi") if has_perm(user, t)}  # riwayat = semua jenis
+    can_pembelian = any(has_perm(user, p) for p in ("pembelian", "berat_koli", "kasir", "detail_koli", "harga", "bandul"))
+    can_penjualan = any(has_perm(user, p) for p in ("penjualan", "laporan_penjualan", "sisa_stock", "out", "revisi", "busai", "detail_koli_cc"))
+
     whs = await db.warehouses.find({}, {"_id": 0}).sort("name", 1).to_list(500)
-    suppliers = await db.suppliers.find({}, {"_id": 0}).sort("name", 1).to_list(500)
-    txs = await db.transactions.find({}, {"_id": 0}).sort([("date", -1), ("created_at", -1)]).to_list(25)
-    pembelian = await db.pembelian.find({}, {"_id": 0}).sort([("tanggal_beli", -1), ("created_at", -1)]).to_list(10)
-    penjualan = await db.penjualan.find({}, {"_id": 0}).sort([("tanggal_jual", -1), ("created_at", -1)]).to_list(10)
-
+    if allowed is not None:
+        whs = [w for w in whs if w["id"] in allowed]
     wh_names = {w["id"]: w["name"] for w in whs}
+
     today = datetime.now(timezone.utc).strftime("%d-%m-%Y")
-    lines = [f"DATA GUDANG SAAT INI (diambil {today}):"]
+    lines = [f"DATA YANG BOLEH DIAKSES PENGGUNA INI (diambil {today}):"]
+    sections = 0
 
-    lines.append("\nDAFTAR GUDANG:")
-    if not whs:
-        lines.append("- (belum ada gudang)")
-    for w in whs:
-        parent = wh_names.get(w.get("parent_id"), "")
-        label = f"{w['name']} (ranting dari {parent})" if parent else w["name"]
-        loc = w.get("location", "")
-        lines.append(f"- {label}" + (f" — lokasi: {loc}" if loc else ""))
+    if can_stock or can_gudang:
+        lines.append("\nDAFTAR GUDANG (yang diakses pengguna):")
+        if not whs:
+            lines.append("- (belum ada gudang)")
+        for w in whs:
+            parent = wh_names.get(w.get("parent_id"), "")
+            label = f"{w['name']} (ranting dari {parent})" if parent else w["name"]
+            loc = w.get("location", "")
+            lines.append(f"- {label}" + (f" — lokasi: {loc}" if loc else ""))
+        sections += 1
 
-    lines.append("\nSTOK PER GUDANG (Glangse=lembar, Tali Putih=kg, Kertas Coklat=roll):")
-    tot = {"glangse": 0.0, "tali": 0.0, "kertas": 0.0}
-    for w in whs:
-        s = stock.get(w["id"], {"glangse": 0.0, "tali": 0.0, "kertas": 0.0})
-        for k in tot:
-            tot[k] += s[k]
+    if can_stock:
+        stock = await compute_stock()
+        tot = {"glangse": 0.0, "tali": 0.0, "kertas": 0.0}
+        lines.append("\nSTOK PER GUDANG (Glangse=lembar, Tali Putih=kg, Kertas Coklat=roll):")
+        for w in whs:
+            s = stock.get(w["id"], {"glangse": 0.0, "tali": 0.0, "kertas": 0.0})
+            for k in tot:
+                tot[k] += s[k]
+            lines.append(
+                f"- {w['name']}: Glangse {_num(s['glangse'])} lembar, Tali Putih {_num(s['tali'])} kg, "
+                f"Kertas Coklat {_num(s['kertas'])} roll"
+            )
         lines.append(
-            f"- {w['name']}: Glangse {_num(s['glangse'])} lembar, Tali Putih {_num(s['tali'])} kg, "
-            f"Kertas Coklat {_num(s['kertas'])} roll"
+            f"- TOTAL (gudang yang diakses): Glangse {_num(tot['glangse'])} lembar, Tali Putih {_num(tot['tali'])} kg, "
+            f"Kertas Coklat {_num(tot['kertas'])} roll"
         )
-    lines.append(
-        f"- TOTAL SEMUA GUDANG: Glangse {_num(tot['glangse'])} lembar, Tali Putih {_num(tot['tali'])} kg, "
-        f"Kertas Coklat {_num(tot['kertas'])} roll"
-    )
+        sections += 1
 
-    lines.append("\nDAFTAR SUPPLIER:")
-    if not suppliers:
-        lines.append("- (belum ada supplier)")
-    for s in suppliers:
-        phone = s.get("phone", "")
-        lines.append(f"- {s['name']}" + (f" — telp {phone}" if phone else ""))
+    if can_supplier:
+        suppliers = await db.suppliers.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+        lines.append("\nDAFTAR SUPPLIER:")
+        if not suppliers:
+            lines.append("- (belum ada supplier)")
+        for s in suppliers:
+            phone = s.get("phone", "")
+            lines.append(f"- {s['name']}" + (f" — telp {phone}" if phone else ""))
+        sections += 1
 
-    type_id = {"masuk": "Barang Masuk", "transfer": "Transfer", "pribadi": "Pemakaian Pribadi"}
-    lines.append("\nTRANSAKSI TERAKHIR (maks 25 — tanggal | jenis | barang | jumlah | gudang | keterangan):")
-    if not txs:
-        lines.append("- (belum ada transaksi)")
-    for t in txs:
-        item = ITEM_LABELS.get(t.get("item", ""), t.get("item", ""))
-        extra = ""
-        if t.get("type") == "masuk" and t.get("supplier_name"):
-            extra = f"dari supplier {t['supplier_name']}"
-        elif t.get("type") == "transfer" and t.get("target_warehouse_name"):
-            extra = f"ke {t['target_warehouse_name']}"
+    if tx_types:
+        query = {"type": {"$in": sorted(tx_types)}, **wh_filter}
+        txs = await db.transactions.find(query, {"_id": 0}).sort([("date", -1), ("created_at", -1)]).to_list(25)
+        type_id = {"masuk": "Barang Masuk", "transfer": "Transfer", "pribadi": "Pemakaian Pribadi"}
+        jenis = ", ".join(type_id[t] for t in sorted(tx_types))
+        lines.append(f"\nTRANSAKSI TERAKHIR (hanya jenis: {jenis}; maks 25 — tanggal | jenis | barang | jumlah | gudang | keterangan):")
+        if not txs:
+            lines.append("- (belum ada transaksi)")
+        for t in txs:
+            item = ITEM_LABELS.get(t.get("item", ""), t.get("item", ""))
+            extra = ""
+            if t.get("type") == "masuk" and t.get("supplier_name"):
+                extra = f"dari supplier {t['supplier_name']}"
+            elif t.get("type") == "transfer" and t.get("target_warehouse_name"):
+                extra = f"ke {t['target_warehouse_name']}"
+            lines.append(
+                f"- {t.get('date', '')} | {type_id.get(t.get('type', ''), t.get('type', ''))} | {item} | "
+                f"{_num(float(t.get('qty', 0)))} | {t.get('warehouse_name', '')}" + (f" | {extra}" if extra else "")
+            )
+        sections += 1
+
+    if can_pembelian:
+        pembelian = await db.pembelian.find(wh_filter, {"_id": 0}).sort([("tanggal_beli", -1), ("created_at", -1)]).to_list(10)
+        lines.append("\nPEMBELIAN INTERNAL TERAKHIR (maks 10 — tanggal | kupon | gudang | jumlah seri | bandul):")
+        if not pembelian:
+            lines.append("- (belum ada pembelian)")
+        for p in pembelian:
+            wh = wh_names.get(p.get("warehouse_id", ""), p.get("warehouse_id", ""))
+            lines.append(
+                f"- {p.get('tanggal_beli', '')} | kupon {p.get('nomor_kupon') or '-'} | {wh} | "
+                f"{p.get('jumlah_seri', 0)} seri | bandul {p.get('bandul_nama') or '-'}"
+            )
+        sections += 1
+
+    if can_penjualan:
+        penjualan = await db.penjualan.find(wh_filter, {"_id": 0}).sort([("tanggal_jual", -1), ("created_at", -1)]).to_list(10)
+        lines.append("\nPENJUALAN TERAKHIR (maks 10 — tanggal | gudang | jumlah item | total harga jual):")
+        if not penjualan:
+            lines.append("- (belum ada penjualan)")
+        for p in penjualan:
+            wh = wh_names.get(p.get("warehouse_id", ""), p.get("warehouse_id", ""))
+            items = p.get("items") or []
+            lines.append(
+                f"- {p.get('tanggal_jual', '')} | {wh} | {len(items)} item | Rp {_num(float(p.get('total_harga_jual', 0)))}"
+            )
+        sections += 1
+
+    if sections == 0:
         lines.append(
-            f"- {t.get('date', '')} | {type_id.get(t.get('type', ''), t.get('type', ''))} | {item} | "
-            f"{_num(float(t.get('qty', 0)))} | {t.get('warehouse_name', '')}" + (f" | {extra}" if extra else "")
-        )
-
-    lines.append("\nPEMBELIAN INTERNAL TERAKHIR (maks 10 — tanggal | kupon | gudang | jumlah seri | bandul):")
-    if not pembelian:
-        lines.append("- (belum ada pembelian)")
-    for p in pembelian:
-        wh = wh_names.get(p.get("warehouse_id", ""), p.get("warehouse_id", ""))
-        lines.append(
-            f"- {p.get('tanggal_beli', '')} | kupon {p.get('nomor_kupon') or '-'} | {wh} | "
-            f"{p.get('jumlah_seri', 0)} seri | bandul {p.get('bandul_nama') or '-'}"
-        )
-
-    lines.append("\nPENJUALAN TERAKHIR (maks 10 — tanggal | gudang | jumlah item | total harga jual):")
-    if not penjualan:
-        lines.append("- (belum ada penjualan)")
-    for p in penjualan:
-        wh = wh_names.get(p.get("warehouse_id", ""), p.get("warehouse_id", ""))
-        items = p.get("items") or []
-        lines.append(
-            f"- {p.get('tanggal_jual', '')} | {wh} | {len(items)} item | Rp {_num(float(p.get('total_harga_jual', 0)))}"
+            "\n(pengguna ini belum diberi akses ke data apa pun — sampaikan dengan sopan bahwa mereka "
+            "belum memiliki akses data dan minta menghubungi admin)"
         )
 
     return "\n".join(lines)
@@ -131,7 +167,7 @@ async def chat(body: ChatIn, user: dict = Depends(get_current_user)):
     if not api_key:
         raise HTTPException(status_code=503, detail="Asisten AI belum dikonfigurasi (kunci tidak tersedia)")
 
-    context = await build_data_context()
+    context = await build_data_context(user)
     chat_client = LlmChat(
         api_key=api_key,
         session_id=f"assistant-{user['id']}",
